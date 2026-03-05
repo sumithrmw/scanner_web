@@ -1,17 +1,20 @@
-import { BarcodeDetector } from "barcode-detector";
+import { BarcodeDetector } from "barcode-detector/pure";
 
 const video = document.getElementById("video");
 const resultDiv = document.getElementById("result");
 const startBtn = document.getElementById("startBtn");
 
 let detector;
-let stream;
+let scanning = false;
 
 async function startScanner() {
+  startBtn.disabled = true;
+  resultDiv.textContent = "Starting camera...";
+
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
       video: {
-        facingMode: "environment",
+        facingMode: { exact: "environment" }, // more explicit for mobile
         width: { ideal: 1280 },
         height: { ideal: 720 }
       }
@@ -20,29 +23,42 @@ async function startScanner() {
     video.srcObject = stream;
     await video.play();
 
-    // Use native if available, otherwise fallback
-    detector = new (window.BarcodeDetector || BarcodeDetector)({
-      formats: ["qr_code", "code_128", "ean_13", "upc_a"]
+    detector = new BarcodeDetector({
+      formats: ["qr_code", "code_128", "ean_13", "ean_8", "upc_a", "upc_e"]
     });
 
+    resultDiv.textContent = "Scanning...";
+    scanning = true;
     scanLoop();
+
   } catch (err) {
     console.error(err);
-    resultDiv.textContent = "Camera error!";
+    resultDiv.textContent = "Camera error: " + err.message;
+    startBtn.disabled = false;
   }
 }
 
 async function scanLoop() {
-  if (!detector) return;
+  if (!scanning || !detector) return;
 
-  try {
-    const barcodes = await detector.detect(video);
+  if (video.readyState === video.HAVE_ENOUGH_DATA) { // only scan when frame is ready
+    try {
+      const barcodes = await detector.detect(video);
+      if (barcodes.length > 0) {
+        const value = barcodes[0].rawValue;
+        resultDiv.textContent = "✅ " + value;
 
-    if (barcodes.length > 0) {
-      resultDiv.textContent = "Detected: " + barcodes[0].rawValue;
+        // Optional: vibrate on mobile for feedback
+        if (navigator.vibrate) navigator.vibrate(200);
+
+        scanning = false; // stop after first scan
+        startBtn.disabled = false;
+        startBtn.textContent = "Scan Again";
+        return;
+      }
+    } catch (err) {
+      // silent — detector throws on empty frames, this is normal
     }
-  } catch (err) {
-    console.error(err);
   }
 
   requestAnimationFrame(scanLoop);
