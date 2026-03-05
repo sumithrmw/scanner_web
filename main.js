@@ -35,9 +35,14 @@ function showApp() {
   loadItems();
 }
 
-els.loginBtn.onclick = async () => {
-  const email = els.email.value.trim(), password = els.password.value;
+els.loginBtn.onclick = async () =>  {
+  // 🔍 DEBUG: Log what we're sending
+  const email = els.email.value.trim();
+  const password = els.password.value;
+  console.log('🔐 Login attempt:', { email, passwordLength: password.length });
+  
   if (!email || !password) { 
+    console.error('❌ Missing credentials');
     els.msg.textContent = '❌ Enter email & password'; 
     els.msg.className = 'error'; 
     return; 
