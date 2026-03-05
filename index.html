@@ -5,57 +5,116 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Delivery Scanner</title>
   <style>
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      text-align: center;
-      padding: 10px;
-      margin: 0;
       background: #f8f9fa;
       color: #333;
+      padding: 12px;
+      line-height: 1.4;
     }
-    h1 { font-size: 1.3rem; margin: 10px 0; }
-    .step {
+    h1 { text-align: center; font-size: 1.4rem; margin: 15px 0 10px; }
+    
+    .container {
+      max-width: 500px;
+      margin: 0 auto;
+    }
+    
+    .card {
       background: white;
       border-radius: 12px;
-      padding: 20px;
-      margin: 10px auto;
-      max-width: 480px;
+      padding: 18px;
+      margin-bottom: 12px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-      display: none;
     }
-    .step.active { display: block; animation: fadeIn 0.3s; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     
-    video, #photoPreview, #finalPhoto {
+    /* Dual Input Row */
+    .input-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin: 8px 0;
+    }
+    .input-row label {
+      flex: 0 0 80px;
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+    .input-row input {
+      flex: 1;
+      padding: 12px 14px;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      font-size: 1rem;
+      min-width: 0;
+    }
+    .input-row input:focus {
+      border-color: #007bff;
+      outline: none;
+    }
+    .scan-btn {
+      flex: 0 0 auto;
+      padding: 12px 16px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .scan-btn:hover { background: #0069d9; }
+    .scan-btn:disabled { background: #ccc; cursor: not-allowed; }
+    
+    /* Camera Preview */
+    #scannerVideo, #photoVideo {
       width: 100%;
-      max-width: 400px;
       border-radius: 10px;
       background: #000;
       margin: 10px 0;
-      display: block;
+      display: none;
     }
-    #photoPreview, #finalPhoto { border: 3px solid #007bff; }
-    #photoPreview.hidden, #finalPhoto.hidden { display: none; }
+    #scannerVideo.active, #photoVideo.active { display: block; }
     
-    textarea {
+    #photoPreview, #finalPhoto {
       width: 100%;
       max-width: 400px;
-      padding: 12px;
+      border: 3px solid #007bff;
+      border-radius: 10px;
       margin: 10px 0;
+      display: none;
+    }
+    #photoPreview.active, #finalPhoto.active { display: block; }
+    
+    canvas { display: none; }
+    
+    /* Textarea */
+    textarea {
+      width: 100%;
+      padding: 12px;
       border: 2px solid #ddd;
       border-radius: 8px;
       font-size: 1rem;
       min-height: 80px;
       resize: vertical;
+      margin: 8px 0;
     }
     textarea:focus { border-color: #007bff; outline: none; }
     
-    .btn-group { margin: 15px 0; }
+    /* Buttons */
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 15px 0;
+      justify-content: center;
+    }
     button {
-      padding: 12px 24px;
+      padding: 12px 20px;
       font-size: 1rem;
-      margin: 5px;
       border: none;
       border-radius: 8px;
       cursor: pointer;
@@ -63,94 +122,128 @@
       transition: transform 0.1s;
     }
     button:active { transform: scale(0.98); }
-    button.primary { background: #007bff; color: white; }
-    button.success { background: #28a745; color: white; }
-    button.secondary { background: #6c757d; color: white; }
-    button.warning { background: #ffc107; color: #212529; }
+    .btn-primary { background: #007bff; color: white; }
+    .btn-success { background: #28a745; color: white; }
+    .btn-secondary { background: #6c757d; color: white; }
+    .btn-warning { background: #ffc107; color: #212529; }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
     
+    /* Status & Helpers */
     #status {
-      margin: 10px 0;
+      text-align: center;
+      margin: 8px 0;
       font-weight: 500;
       min-height: 24px;
       color: #dc3545;
     }
-    .barcode-display {
-      font-size: 1.2rem;
-      font-weight: bold;
-      color: #007bff;
-      margin: 10px 0;
-      word-break: break-all;
+    .hint {
+      font-size: 0.85rem;
+      color: #666;
+      margin: 4px 0 12px;
+      text-align: center;
     }
+    .step { display: none; }
+    .step.active { display: block; animation: fadeIn 0.25s; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    
+    /* Result Box */
     .result-box {
       background: #e9f7ef;
       border: 1px solid #28a745;
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 15px;
-      margin: 10px 0;
-      text-align: left;
+      margin: 12px 0;
+      display: none;
     }
+    .result-box.active { display: block; }
     .result-box pre {
-      background: #fff;
+      background: white;
       padding: 10px;
-      border-radius: 5px;
+      border-radius: 6px;
       overflow-x: auto;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
+      margin-top: 10px;
+    }
+    
+    /* Mobile: stack inputs */
+    @media (max-width: 420px) {
+      .input-row { flex-direction: column; align-items: stretch; }
+      .input-row label { margin-bottom: 4px; }
+      .scan-btn { width: 100%; justify-content: center; }
     }
   </style>
 </head>
 <body>
-  <h1>📦 Delivery Scanner</h1>
-  <div id="status"></div>
+  <div class="container">
+    <h1>📦 Delivery Scanner</h1>
+    <div id="status"></div>
 
-  <!-- STEP 1: SCAN BARCODE -->
-  <div id="step1" class="step active">
-    <h3>🔍 Scan Barcode</h3>
-    <video id="video" playsinline autoplay muted></video>
-    <div id="barcodeResult" class="barcode-display">Tap "Start" to scan</div>
-    <div class="btn-group">
-      <button id="startScanBtn" class="primary">▶ Start Scanner</button>
-      <button id="rescanBtn" class="secondary hidden">🔄 Rescan</button>
-    </div>
-  </div>
-
-  <!-- STEP 2: TAKE PHOTO -->
-  <div id="step2" class="step">
-    <h3>📸 Take Package Photo</h3>
-    <video id="photoVideo" playsinline autoplay muted class="hidden"></video>
-    <canvas id="canvas" class="hidden"></canvas>
-    <img id="photoPreview" class="hidden" alt="Preview"/>
-    <div class="btn-group">
-      <button id="takePhotoBtn" class="primary hidden">📸 Take Photo</button>
-      <button id="retakePhotoBtn" class="secondary hidden">🔄 Retake Photo</button>
-      <button id="confirmPhotoBtn" class="success hidden">✅ Confirm</button>
-    </div>
-  </div>
-
-  <!-- STEP 3: NOTES + SUBMIT -->
-  <div id="step3" class="step">
-    <h3>📝 Add Notes & Submit</h3>
-    <p><strong>Barcode:</strong> <span id="finalBarcode" class="barcode-display"></span></p>
-    <img id="finalPhoto" class="hidden" alt="Final"/>
-    <textarea id="notes" placeholder="Optional notes (e.g., 'Left at door', 'Box damaged')..."></textarea>
-    
-    <div class="btn-group">
-      <button id="submitBtn" class="success">📤 Submit</button>
-      <button id="retakeAllBtn" class="warning">🔄 Retake All</button>
-    </div>
-
-    <!-- Result (shown after submit) -->
-    <div id="result" class="result-box hidden">
-      <h4>✅ Data Ready!</h4>
-      <p><strong>Barcode:</strong> <span id="resBarcode"></span></p>
-      <p><strong>Notes:</strong> <span id="resNotes"></span></p>
-      <img id="resPhoto" style="max-width:100%; border-radius:6px; margin:8px 0;"/>
-      <div class="btn-group">
-        <button id="copyBtn" class="primary">📋 Copy JSON</button>
-        <button id="downloadBtn" class="secondary">💾 Download JSON</button>
-        <button id="newScanBtn" class="success">✨ New Scan</button>
+    <!-- STEP 1: BARCODE (Scan OR Type) -->
+    <div id="step1" class="step active">
+      <div class="card">
+        <h3>🔍 Enter Barcode</h3>
+        <p class="hint">Scan with camera or type manually</p>
+        
+        <div class="input-row">
+          <label for="barcodeInput">Barcode:</label>
+          <input type="text" id="barcodeInput" placeholder="e.g., 123456789012" autocomplete="off"/>
+          <button id="scanBtn" class="scan-btn">📷 Scan</button>
+        </div>
+        
+        <!-- Scanner Preview (hidden by default) -->
+        <video id="scannerVideo" playsinline autoplay muted></video>
+        <canvas id="scannerCanvas"></canvas>
+        
+        <div class="btn-group">
+          <button id="confirmBarcodeBtn" class="btn-success" disabled>✅ Continue</button>
+          <button id="stopScanBtn" class="btn-secondary hidden">⏹ Stop</button>
+        </div>
       </div>
-      <pre id="jsonOutput"></pre>
+    </div>
+
+    <!-- STEP 2: TAKE PHOTO -->
+    <div id="step2" class="step">
+      <div class="card">
+        <h3>📸 Capture Package Photo</h3>
+        <video id="photoVideo" playsinline autoplay muted></video>
+        <canvas id="photoCanvas"></canvas>
+        <img id="photoPreview" alt="Preview"/>
+        
+        <div class="btn-group">
+          <button id="takePhotoBtn" class="btn-primary hidden">📸 Take Photo</button>
+          <button id="retakePhotoBtn" class="btn-secondary hidden">🔄 Retake</button>
+          <button id="confirmPhotoBtn" class="btn-success hidden">✅ Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 3: NOTES + SUBMIT -->
+    <div id="step3" class="step">
+      <div class="card">
+        <h3>📝 Add Notes & Submit</h3>
+        <p><strong>Barcode:</strong> <span id="displayBarcode" style="color:#007bff;font-weight:600;"></span></p>
+        <img id="finalPhoto" alt="Package"/>
+        <textarea id="notesInput" placeholder="Optional notes (e.g., 'Left at door', 'Damaged box')..."></textarea>
+        
+        <div class="btn-group">
+          <button id="submitBtn" class="btn-success">📤 Submit</button>
+          <button id="retakeAllBtn" class="btn-warning">🔄 Retake All</button>
+        </div>
+
+        <!-- Result (after submit) -->
+        <div id="resultBox" class="result-box">
+          <h4>✅ Data Ready!</h4>
+          <p><strong>Barcode:</strong> <span id="resBarcode"></span></p>
+          <p><strong>Notes:</strong> <span id="resNotes"></span></p>
+          <img id="resPhoto" style="max-width:100%;border-radius:6px;margin:8px 0;"/>
+          <div class="btn-group">
+            <button id="copyBtn" class="btn-primary">📋 Copy JSON</button>
+            <button id="downloadBtn" class="btn-secondary">💾 Download</button>
+            <button id="newScanBtn" class="btn-success">✨ New Scan</button>
+          </div>
+          <pre id="jsonOutput"></pre>
+        </div>
+      </div>
     </div>
   </div>
 
