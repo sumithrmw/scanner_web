@@ -1,49 +1,25 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Fast Barcode Scanner</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      text-align: center;
-      background: #111;
-      color: white;
-    }
-    video {
-      width: 100%;
-      max-width: 500px;
-      border-radius: 10px;
-      margin-top: 20px;
-    }
-    #result {
-      margin-top: 20px;
-      font-size: 20px;
-      color: #00ff99;
-    }
-    button {
-      margin-top: 20px;
-      padding: 10px 20px;
-      font-size: 18px;
-      border: none;
-      border-radius: 8px;
-      background: #00ff99;
-      color: black;
-      cursor: pointer;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fast Barcode Scanner</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; }
+        video { width: 100%; max-width: 400px; border: 1px solid #ccc; border-radius: 8px; }
+        #result { margin: 20px 0; font-weight: bold; font-size: 1.2rem; }
+        button { padding: 10px 20px; font-size: 1rem; cursor: pointer; }
+    </style>
   <script type="module" crossorigin src="/assets/index-C3ozfTSp.js"></script>
 </head>
 <body>
-
-  <h2>Mobile Barcode Scanner</h2>
-  <video id="video" playsinline autoplay></video>
-  <br>
-  <button id="startBtn">Start Scanner</button>
-  <div id="result">Waiting...</div>
+    <h1>Mobile Barcode Scanner</h1>
+    
+    <!-- Crucial: playsinline allows video to play inside the page on iOS -->
+    <video id="video" playsinline autoplay muted></video>
+    
+    <div id="result">Waiting...</div>
+    <button id="startBtn">Start Scanner</button>
 
-
 </body>
 </html>
