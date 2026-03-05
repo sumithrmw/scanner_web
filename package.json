@@ -13,6 +13,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@supabase/supabase-js": "^2.98.0",
     "barcode-detector": "^3.1.0"
   },
   "devDependencies": {

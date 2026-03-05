@@ -1,278 +1,253 @@
 import { BarcodeDetector } from "barcode-detector/pure";
+import { supabase } from "./supabase.js"; // adjust path if needed
 
-// ===== DOM Elements =====
-const barcodeInput = document.getElementById("barcodeInput");
-const scanBtn = document.getElementById("scanBtn");
-const confirmBarcodeBtn = document.getElementById("confirmBarcodeBtn");
-const stopScanBtn = document.getElementById("stopScanBtn");
-const scannerVideo = document.getElementById("scannerVideo");
-const scannerCanvas = document.getElementById("scannerCanvas");
+// DOM Elements
+const video = document.getElementById("video");
+const resultDiv = document.getElementById("result");
+const startBtn = document.getElementById("startBtn");
+const saveSection = document.getElementById("save-section");
+const saveBtn = document.getElementById("saveBtn");
+const descriptionInput = document.getElementById("description");
+const imageInput = document.getElementById("image-input");
+const saveMessage = document.getElementById("save-message");
+const itemsList = document.getElementById("items-list");
+const loadHistoryBtn = document.getElementById("loadHistoryBtn");
 
-const photoVideo = document.getElementById("photoVideo");
-const photoCanvas = document.getElementById("photoCanvas");
-const photoPreview = document.getElementById("photoPreview");
-const takePhotoBtn = document.getElementById("takePhotoBtn");
-const retakePhotoBtn = document.getElementById("retakePhotoBtn");
-const confirmPhotoBtn = document.getElementById("confirmPhotoBtn");
+// Auth Elements
+const authSection = document.getElementById("auth-section");
+const scannerSection = document.getElementById("scanner-section");
+const historySection = document.getElementById("history-section");
+const emailInput = document.getElementById("email");
+const passwordInput = document.getElementById("password");
+const signupBtn = document.getElementById("signupBtn");
+const loginBtn = document.getElementById("loginBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const authMessage = document.getElementById("auth-message");
 
-const displayBarcode = document.getElementById("displayBarcode");
-const finalPhoto = document.getElementById("finalPhoto");
-const notesInput = document.getElementById("notesInput");
-const submitBtn = document.getElementById("submitBtn");
-const retakeAllBtn = document.getElementById("retakeAllBtn");
-
-const resultBox = document.getElementById("resultBox");
-const resBarcode = document.getElementById("resBarcode");
-const resNotes = document.getElementById("resNotes");
-const resPhoto = document.getElementById("resPhoto");
-const jsonOutput = document.getElementById("jsonOutput");
-const copyBtn = document.getElementById("copyBtn");
-const downloadBtn = document.getElementById("downloadBtn");
-const newScanBtn = document.getElementById("newScanBtn");
-
-const status = document.getElementById("status");
-const step1 = document.getElementById("step1");
-const step2 = document.getElementById("step2");
-const step3 = document.getElementById("step3");
-
-// ===== State =====
+// App State
 let detector;
 let scanning = false;
-let scannerStream = null;
-let photoStream = null;
-let photoBase64 = "";
+let currentBarcode = null;
 
-// ===== STEP 1: BARCODE INPUT (Scan OR Type) =====
+// ==================== AUTH FUNCTIONS ====================
+async function checkAuth() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) {
+    showApp();
+  } else {
+    showAuth();
+  }
+}
 
-// Enable "Continue" when barcode has value
-barcodeInput.addEventListener("input", () => {
-  confirmBarcodeBtn.disabled = !barcodeInput.value.trim();
+function showAuth() {
+  authSection.style.display = "block";
+  scannerSection.style.display = "none";
+  historySection.style.display = "none";
+}
+
+function showApp() {
+  authSection.style.display = "none";
+  scannerSection.style.display = "block";
+  historySection.style.display = "block";
+  loadHistory();
+}
+
+signupBtn.addEventListener("click", async () => {
+  const email = emailInput.value;
+  const password = passwordInput.value;
+  const { error } = await supabase.auth.signUp({ email, password });
+  if (error) {
+    authMessage.textContent = "❌ " + error.message;
+    authMessage.style.color = "red";
+  } else {
+    authMessage.textContent = "✅ Check email for confirmation!";
+    authMessage.style.color = "green";
+  }
 });
 
+loginBtn.addEventListener("click", async () => {
+  const email = emailInput.value;
+  const password = passwordInput.value;
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    authMessage.textContent = "❌ " + error.message;
+    authMessage.style.color = "red";
+  } else {
+    authMessage.textContent = "";
+    showApp();
+  }
+});
+
+logoutBtn.addEventListener("click", async () => {
+  await supabase.auth.signOut();
+  showAuth();
+  // Reset UI
+  resultDiv.textContent = "Waiting...";
+  saveSection.style.display = "none";
+  itemsList.innerHTML = "";
+});
+
+// Listen for auth changes (e.g., page refresh)
+supabase.auth.onAuthStateChange((event, session) => {
+  if (session) showApp();
+  else showAuth();
+});
+
+// ==================== SCANNER FUNCTIONS ====================
 async function startScanner() {
+  startBtn.disabled = true;
+  resultDiv.textContent = "Starting camera...";
+
   try {
-    scannerStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { exact: "environment" }, width: { ideal: 1280 } }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { exact: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
     });
-    
-    scannerVideo.srcObject = scannerStream;
-    await scannerVideo.play();
-    scannerVideo.classList.add("active");
-    
-    scanBtn.classList.add("hidden");
-    stopScanBtn.classList.remove("hidden");
-    barcodeInput.disabled = true;
-    
+
+    video.srcObject = stream;
+    await video.play();
+
     detector = new BarcodeDetector({
       formats: ["qr_code", "code_128", "ean_13", "ean_8", "upc_a", "upc_e"]
     });
-    
+
+    resultDiv.textContent = "Scanning...";
     scanning = true;
-    status.textContent = "🔍 Scanning... Point at barcode";
     scanLoop();
+
   } catch (err) {
-    status.textContent = "❌ Camera error: " + err.message;
-    scanBtn.disabled = false;
+    console.error(err);
+    resultDiv.textContent = "Camera error: " + err.message;
+    startBtn.disabled = false;
   }
 }
 
 async function scanLoop() {
-  if (!scanning || !detector || scannerVideo.readyState !== scannerVideo.HAVE_ENOUGH_DATA) {
-    if (scanning) requestAnimationFrame(scanLoop);
-    return;
-  }
+  if (!scanning || !detector) return;
 
-  try {
-    const barcodes = await detector.detect(scannerVideo);
-    if (barcodes.length > 0) {
-      const code = barcodes[0].rawValue.trim();
-      barcodeInput.value = code;
-      confirmBarcodeBtn.disabled = false;
-      status.textContent = "✅ Barcode detected!";
-      if (navigator.vibrate) navigator.vibrate(100);
-      
-      // Auto-stop scanner after success
-      stopScanner();
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    try {
+      const barcodes = await detector.detect(video);
+      if (barcodes.length > 0) {
+        currentBarcode = barcodes[0].rawValue;
+        resultDiv.textContent = "✅ Scanned: " + currentBarcode;
+        if (navigator.vibrate) navigator.vibrate(200);
+        
+        scanning = false;
+        startBtn.disabled = false;
+        startBtn.textContent = "Scan Again";
+        
+        // Show save section
+        saveSection.style.display = "block";
+        return;
+      }
+    } catch (err) {
+      // Silent - normal for empty frames
     }
-  } catch (e) { /* ignore */ }
-  
-  if (scanning) requestAnimationFrame(scanLoop);
-}
-
-function stopScanner() {
-  scanning = false;
-  if (scannerStream) {
-    scannerStream.getTracks().forEach(t => t.stop());
-    scannerStream = null;
   }
-  scannerVideo.classList.remove("active");
-  scannerVideo.srcObject = null;
-  
-  scanBtn.classList.remove("hidden");
-  stopScanBtn.classList.add("hidden");
-  barcodeInput.disabled = false;
-  barcodeInput.focus();
+  requestAnimationFrame(scanLoop);
 }
 
-// ===== STEP 2: PHOTO CAPTURE =====
-async function startPhotoCamera() {
-  try {
-    photoStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" }
-    });
-    photoVideo.srcObject = photoStream;
-    await photoVideo.play();
-    photoVideo.classList.add("active");
-    takePhotoBtn.classList.remove("hidden");
-  } catch (err) {
-    status.textContent = "❌ Photo camera error: " + err.message;
-  }
-}
-
-function capturePhoto() {
-  photoCanvas.width = photoVideo.videoWidth || 1280;
-  photoCanvas.height = photoVideo.videoHeight || 720;
-  const ctx = photoCanvas.getContext("2d");
-  ctx.drawImage(photoVideo, 0, 0, photoCanvas.width, photoCanvas.height);
-  
-  // Stop stream
-  photoStream.getTracks().forEach(t => t.stop());
-  photoVideo.classList.remove("active");
-  takePhotoBtn.classList.add("hidden");
-  
-  // Generate preview
-  photoBase64 = photoCanvas.toDataURL("image/jpeg", 0.85);
-  photoPreview.src = photoBase64;
-  photoPreview.classList.add("active");
-  
-  retakePhotoBtn.classList.remove("hidden");
-  confirmPhotoBtn.classList.remove("hidden");
-}
-
-function retakePhotoOnly() {
-  photoPreview.classList.remove("active");
-  retakePhotoBtn.classList.add("hidden");
-  confirmPhotoBtn.classList.add("hidden");
-  startPhotoCamera();
-}
-
-// ===== STEP 3: NOTES + SUBMIT =====
-function prepareSubmit() {
-  const barcode = barcodeInput.value.trim();
-  displayBarcode.textContent = barcode;
-  finalPhoto.src = photoBase64;
-  finalPhoto.classList.add("active");
-  notesInput.value = "";
-  resultBox.classList.remove("active");
-}
-
-function handleSubmit() {
-  const payload = {
-    barcode: barcodeInput.value.trim(),
-    photo: photoBase64,
-    notes: notesInput.value.trim(),
-    timestamp: new Date().toISOString(),
-    device: navigator.userAgent
-  };
-
-  // Show result
-  resBarcode.textContent = payload.barcode;
-  resNotes.textContent = payload.notes || "(none)";
-  resPhoto.src = payload.photo;
-  jsonOutput.textContent = JSON.stringify(payload, null, 2);
-  resultBox.classList.add("active");
-  
-  status.textContent = "✅ Ready! Copy, download, or start new scan.";
-  status.style.color = "#28a745";
-  
-  // Copy button
-  copyBtn.onclick = () => {
-    navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-    status.textContent = "📋 Copied to clipboard!";
-    setTimeout(() => status.textContent = "", 1500);
-  };
-  
-  // Download button
-  downloadBtn.onclick = () => {
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `delivery_${payload.barcode.replace(/\W/g, '_')}_${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-}
-
-// ===== NAVIGATION =====
-function goToStep(n) {
-  [step1, step2, step3].forEach((el, i) => 
-    el.classList.toggle("active", i + 1 === n)
-  );
-  if (n === 2) {
-    // Validate barcode before proceeding
-    if (!barcodeInput.value.trim()) {
-      status.textContent = "⚠️ Please enter a barcode first";
-      return;
-    }
-    startPhotoCamera();
-  }
-  if (n === 3) prepareSubmit();
-}
-
-function resetAll() {
-  // Stop all streams
-  [scannerStream, photoStream].forEach(stream => {
-    if (stream) stream.getTracks().forEach(t => t.stop());
-  });
-  
-  // Reset state
-  scanning = false;
-  photoBase64 = "";
-  
-  // Reset UI
-  status.textContent = "";
-  status.style.color = "#dc3545";
-  barcodeInput.value = "";
-  barcodeInput.disabled = false;
-  confirmBarcodeBtn.disabled = true;
-  
-  [scannerVideo, photoVideo, photoPreview, finalPhoto].forEach(el => {
-    el.classList.remove("active");
-    el.srcObject = null;
-  });
-  [takePhotoBtn, retakePhotoBtn, confirmPhotoBtn, stopScanBtn].forEach(btn => 
-    btn.classList.add("hidden")
-  );
-  scanBtn.classList.remove("hidden");
-  scanBtn.disabled = false;
-  
-  resultBox.classList.remove("active");
-  
-  goToStep(1);
-}
-
-// ===== EVENT LISTENERS =====
-scanBtn.addEventListener("click", () => {
-  scanBtn.disabled = true;
+startBtn.addEventListener("click", () => {
+  if (scanning) return;
+  saveSection.style.display = "none";
   startScanner();
 });
 
-stopScanBtn.addEventListener("click", stopScanner);
+// ==================== SAVE ITEM FUNCTION ====================
+saveBtn.addEventListener("click", async () => {
+  if (!currentBarcode) return;
+  
+  saveBtn.disabled = true;
+  saveMessage.textContent = "Saving...";
 
-confirmBarcodeBtn.addEventListener("click", () => goToStep(2));
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not authenticated");
 
-takePhotoBtn.addEventListener("click", capturePhoto);
-retakePhotoBtn.addEventListener("click", retakePhotoOnly);
-confirmPhotoBtn.addEventListener("click", () => goToStep(3));
+    const description = descriptionInput.value || "";
+    let imageUrl = null;
 
-submitBtn.addEventListener("click", handleSubmit);
-retakeAllBtn.addEventListener("click", resetAll);
-newScanBtn.addEventListener("click", resetAll);
+    // Upload image if selected
+    if (imageInput.files[0]) {
+      const file = imageInput.files[0];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      
+      const { error: uploadError, data: uploadData } = await supabase.storage
+        .from('item-images')
+        .upload(fileName, file);
+      
+      if (uploadError) throw uploadError;
+      
+      // Get public URL
+const { data: { publicUrl } } = supabase.storage.from('item-images').getPublicUrl(fileName);
+    }
 
-// Allow Enter key to confirm barcode
-barcodeInput.addEventListener("keypress", (e) => {
-  if (e.key === "Enter" && barcodeInput.value.trim()) {
-    confirmBarcodeBtn.click();
+    // Save to database
+    const { error: dbError } = await supabase
+      .from('items')
+      .insert([{
+        user_id: user.id,
+        barcode: currentBarcode,
+        description,
+        image_url: imageUrl
+      }]);
+
+    if (dbError) throw dbError;
+
+    saveMessage.textContent = "✅ Saved!";
+    saveMessage.style.color = "green";
+    
+    // Reset form
+    descriptionInput.value = "";
+    imageInput.value = "";
+    
+    // Refresh history
+    loadHistory();
+
+  } catch (err) {
+    console.error(err);
+    saveMessage.textContent = "❌ Error: " + err.message;
+    saveMessage.style.color = "red";
+  } finally {
+    saveBtn.disabled = false;
   }
 });
+
+// ==================== LOAD HISTORY ====================
+async function loadHistory() {
+  itemsList.innerHTML = "<p>Loading...</p>";
+  
+  const { data, error } = await supabase
+    .from('items')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    itemsList.innerHTML = `<p style="color:red">Error: ${error.message}</p>`;
+    return;
+  }
+
+  if (data.length === 0) {
+    itemsList.innerHTML = "<p>No items yet. Scan something!</p>";
+    return;
+  }
+
+  itemsList.innerHTML = data.map(item => `
+    <div style="border:1px solid #ccc; padding:10px; margin:10px 0; border-radius:8px">
+      ${item.image_url ? `<img src="${item.image_url}" style="max-width:100px; max-height:100px"><br>` : ''}
+      <strong>Barcode:</strong> ${item.barcode}<br>
+      <strong>Description:</strong> ${item.description || '—'}<br>
+      <small>${new Date(item.created_at).toLocaleString()}</small>
+    </div>
+  `).join('');
+}
+
+loadHistoryBtn.addEventListener("click", loadHistory);
+
+// ==================== INIT ====================
+checkAuth();
