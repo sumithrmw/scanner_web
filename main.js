@@ -18,18 +18,92 @@ const loadHistoryBtn = document.getElementById("loadHistoryBtn");
 const authSection = document.getElementById("auth-section");
 const scannerSection = document.getElementById("scanner-section");
 const historySection = document.getElementById("history-section");
-const emailInput = document.getElementById("email");
-const passwordInput = document.getElementById("password");
-const signupBtn = document.getElementById("signupBtn");
-const loginBtn = document.getElementById("loginBtn");
-const logoutBtn = document.getElementById("logoutBtn");
+
+// Auth Elements
+const tabLogin = document.getElementById("tab-login");
+const tabSignup = document.getElementById("tab-signup");
+const loginForm = document.getElementById("login-form");
+const signupForm = document.getElementById("signup-form");
+const loginEmail = document.getElementById("login-email");
+const loginPassword = document.getElementById("login-password");
+const signupEmail = document.getElementById("signup-email");
+const signupPassword = document.getElementById("signup-password");
+const signupConfirm = document.getElementById("signup-confirm");
+const strengthFill = document.getElementById("strength-fill");
+const strengthText = document.getElementById("strength-text");
+const authLoading = document.getElementById("auth-loading");
 const authMessage = document.getElementById("auth-message");
+const loginBtn = document.getElementById("loginBtn");
+const signupBtn = document.getElementById("signupBtn");
+const logoutBtn = document.getElementById("logoutBtn");
 
 // ==================== APP STATE ====================
 let detector;
 let scanning = false;
 let currentBarcode = null;
 let currentUser = null;
+
+// ==================== UTILITY FUNCTIONS ====================
+function showLoading(show) {
+  authLoading.classList.toggle("hidden", !show);
+  loginBtn.disabled = show;
+  signupBtn.disabled = show;
+}
+
+function showMessage(text, type = "info") {
+  authMessage.textContent = text;
+  authMessage.className = type;
+}
+
+function validateEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function checkPasswordStrength(password) {
+  let strength = 0;
+  if (password.length >= 6) strength++;
+  if (password.length >= 10) strength++;
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
+  if (/\d/.test(password)) strength++;
+  if (/[^a-zA-Z0-9]/.test(password)) strength++;
+  return strength;
+}
+
+function updatePasswordStrength(password) {
+  const strength = checkPasswordStrength(password);
+  const colors = ["#dc3545", "#dc3545", "#ffc107", "#28a745", "#28a745", "#28a745"];
+  const labels = ["Very Weak", "Weak", "Fair", "Good", "Strong", "Very Strong"];
+  
+  const percentage = (strength / 5) * 100;
+  strengthFill.style.width = `${percentage}%`;
+  strengthFill.style.background = colors[strength];
+  strengthText.textContent = password ? labels[strength] : "Password strength";
+  strengthText.style.color = colors[strength];
+  
+  return strength >= 3;
+}
+
+// ==================== TAB SWITCHING ====================
+tabLogin.addEventListener("click", () => {
+  tabLogin.classList.add("active");
+  tabSignup.classList.remove("active");
+  loginForm.classList.remove("hidden");
+  signupForm.classList.add("hidden");
+  showMessage("");
+});
+
+tabSignup.addEventListener("click", () => {
+  tabSignup.classList.add("active");
+  tabLogin.classList.remove("active");
+  signupForm.classList.remove("hidden");
+  loginForm.classList.add("hidden");
+  showMessage("");
+});
+
+// ==================== PASSWORD STRENGTH LIVE FEEDBACK ====================
+signupPassword.addEventListener("input", () => {
+  updatePasswordStrength(signupPassword.value);
+});
 
 // ==================== AUTH FUNCTIONS ====================
 async function checkAuth() {
@@ -42,6 +116,11 @@ function showAuth() {
   authSection.classList.remove("hidden");
   scannerSection.classList.add("hidden");
   historySection.classList.add("hidden");
+  logoutBtn.classList.add("hidden");
+  tabLogin.classList.add("active");
+  tabSignup.classList.remove("active");
+  loginForm.classList.remove("hidden");
+  signupForm.classList.add("hidden");
 }
 
 function showApp() {
@@ -52,71 +131,137 @@ function showApp() {
   loadHistory();
 }
 
-async function handleSignUp() {
-  const email = emailInput.value.trim();
-  const password = passwordInput.value;
+async function handleLogin() {
+  const email = loginEmail.value.trim();
+  const password = loginPassword.value;
   
-  if (!email || !password) {
-    authMessage.textContent = "❌ Please enter email and password";
-    authMessage.className = "error";
+  if (!validateEmail(email)) {
+    showMessage("❌ Please enter a valid email", "error");
     return;
   }
-
-  const { error } = await supabase.auth.signUp({ email, password });
   
-  if (error) {
-    authMessage.textContent = "❌ " + error.message;
-    authMessage.className = "error";
-  } else {
-    authMessage.textContent = "✅ Check email for confirmation link!";
-    authMessage.className = "success";
-  }
-}
-
-async function handleSignIn() {
-  const email = emailInput.value.trim();
-  const password = passwordInput.value;
-  
-  if (!email || !password) {
-    authMessage.textContent = "❌ Please enter email and password";
-    authMessage.className = "error";
+  if (!password) {
+    showMessage("❌ Please enter your password", "error");
     return;
   }
-
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
   
-  if (error) {
-    authMessage.textContent = "❌ " + error.message;
-    authMessage.className = "error";
-  } else {
-    authMessage.textContent = "";
+  showLoading(true);
+  showMessage("");
+  
+  try {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    
+    if (error) throw error;
+    
+    showMessage("✅ Login successful!", "success");
     await checkAuth();
     showApp();
+    
+  } catch (err) {
+    console.error(err);
+    showMessage("❌ " + err.message, "error");
+  } finally {
+    showLoading(false);
   }
 }
 
-async function handleSignOut() {
-  await supabase.auth.signOut();
-  currentUser = null;
-  showAuth();
-  resultDiv.textContent = "Waiting...";
-  saveSection.classList.add("hidden");
-  itemsList.innerHTML = "";
-  startBtn.textContent = "▶️ Start Scanner";
-  startBtn.disabled = false;
-  scanning = false;
-  if (video.srcObject) {
-    video.srcObject.getTracks().forEach(track => track.stop());
-    video.srcObject = null;
+async function handleSignup() {
+  const email = signupEmail.value.trim();
+  const password = signupPassword.value;
+  const confirm = signupConfirm.value;
+  
+  if (!validateEmail(email)) {
+    showMessage("❌ Please enter a valid email", "error");
+    return;
+  }
+  
+  if (password.length < 6) {
+    showMessage("❌ Password must be at least 6 characters", "error");
+    return;
+  }
+  
+  if (password !== confirm) {
+    showMessage("❌ Passwords don't match", "error");
+    return;
+  }
+  
+  const isStrong = updatePasswordStrength(password);
+  if (!isStrong) {
+    showMessage("⚠️ Please use a stronger password", "error");
+    return;
+  }
+  
+  showLoading(true);
+  showMessage("");
+  
+  try {
+    const { error: signupError } = await supabase.auth.signUp({ email, password });
+    
+    if (signupError) throw signupError;
+    
+    // Auto-login after signup
+    const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+    
+    if (loginError) throw loginError;
+    
+    showMessage("✅ Account created! Redirecting...", "success");
+    
+    setTimeout(async () => {
+      await checkAuth();
+      showApp();
+    }, 1000);
+    
+  } catch (err) {
+    console.error(err);
+    
+    if (err.message.includes("User already registered")) {
+      showMessage("❌ This email is already registered. Try logging in!", "error");
+    } else if (err.message.includes("weak password")) {
+      showMessage("❌ Password is too weak. Use numbers & special characters.", "error");
+    } else {
+      showMessage("❌ " + err.message, "error");
+    }
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function handleLogout() {
+  showLoading(true);
+  
+  try {
+    await supabase.auth.signOut();
+    currentUser = null;
+    showAuth();
+    showMessage("✅ Logged out successfully", "success");
+    
+    loginEmail.value = "";
+    loginPassword.value = "";
+    signupEmail.value = "";
+    signupPassword.value = "";
+    signupConfirm.value = "";
+    updatePasswordStrength("");
+    
+  } catch (err) {
+    showMessage("❌ " + err.message, "error");
+  } finally {
+    showLoading(false);
   }
 }
 
 // Auth Event Listeners
-signupBtn.addEventListener("click", handleSignUp);
-loginBtn.addEventListener("click", handleSignIn);
-logoutBtn.addEventListener("click", handleSignOut);
+loginBtn.addEventListener("click", handleLogin);
+signupBtn.addEventListener("click", handleSignup);
+logoutBtn.addEventListener("click", handleLogout);
 
-// Listen for auth state changes
+loginPassword.addEventListener("keypress", (e) => {
+  if (e.key === "Enter") handleLogin();
+});
+
+signupConfirm.addEventListener("keypress", (e) => {
+  if (e.key === "Enter") handleSignup();
+});
+
 supabase.auth.onAuthStateChange(async (event, session) => {
   if (session) {
     currentUser = session.user;
@@ -175,7 +320,6 @@ async function scanLoop() {
         startBtn.disabled = false;
         startBtn.textContent = "🔄 Scan Again";
         
-        // Show save section
         barcodeDisplay.value = currentBarcode;
         saveSection.classList.remove("hidden");
         return;
@@ -213,7 +357,6 @@ async function saveItem() {
     const description = descriptionInput.value.trim();
     let imageUrl = null;
 
-    // Upload image if selected
     if (imageInput.files[0]) {
       const file = imageInput.files[0];
       const fileExt = file.name.split('.').pop();
@@ -232,7 +375,6 @@ async function saveItem() {
       imageUrl = publicUrl;
     }
 
-    // Save to database
     const { error: dbError } = await supabase
       .from('items')
       .insert([{
@@ -247,14 +389,11 @@ async function saveItem() {
     saveMessage.textContent = "✅ Saved successfully!";
     saveMessage.className = "success";
     
-    // Reset form
     descriptionInput.value = "";
     imageInput.value = "";
     
-    // Refresh history
     await loadHistory();
 
-    // Hide save section after 2 seconds
     setTimeout(() => {
       saveSection.classList.add("hidden");
       resultDiv.textContent = "Waiting...";
