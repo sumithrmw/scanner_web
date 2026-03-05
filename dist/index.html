@@ -6,18 +6,17 @@
     <title>Fast Barcode Scanner</title>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; }
-        video { width: 100%; max-width: 400px; border: 1px solid #ccc; border-radius: 8px; }
-        #result { margin: 20px 0; font-weight: bold; font-size: 1.2rem; }
-        button { padding: 10px 20px; font-size: 1rem; cursor: pointer; }
+        video { width: 100%; max-width: 400px; border: 1px solid #ccc; border-radius: 8px; background: #000; }
+        #result { margin: 20px 0; font-weight: bold; font-size: 1.2rem; color: #333; }
+        button { padding: 10px 20px; font-size: 1rem; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 5px; }
+        button:disabled { background: #ccc; }
     </style>
-  <script type="module" crossorigin src="/assets/index-C3ozfTSp.js"></script>
+  <script type="module" crossorigin src="/bar_code_web/assets/index-C3ozfTSp.js"></script>
 </head>
 <body>
     <h1>Mobile Barcode Scanner</h1>
-    
-    <!-- Crucial: playsinline allows video to play inside the page on iOS -->
+    <!-- playsinline is critical for iOS -->
     <video id="video" playsinline autoplay muted></video>
-    
     <div id="result">Waiting...</div>
     <button id="startBtn">Start Scanner</button>
 
