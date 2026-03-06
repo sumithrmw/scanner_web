@@ -24,6 +24,8 @@ const els = {
   save: $('save'),
   code: $('code'),
   desc: $('desc'),
+  captureBtn: $('captureBtn'),
+  preview: $('preview'),
   file: $('file'),
   saveBtn: $('saveBtn'),
   cancelBtn: $('cancelBtn'),
@@ -44,6 +46,8 @@ let currentCode = null;
 let stream = null;
 let user = null;
 let items = [];
+let capturedBlob = null;
+let previewUrl = null;
 
 // ==================== UTILS ====================
 const show = (el) => el.classList.remove('hidden');
@@ -167,23 +171,62 @@ async function startScanner() {
   }
 }
 
+function resetCapture() {
+  capturedBlob = null;
+  if (previewUrl) {
+    URL.revokeObjectURL(previewUrl);
+    previewUrl = null;
+  }
+  els.preview.src = '';
+  hide(els.preview);
+  els.captureBtn.textContent = '📸 Take photo';
+  els.captureBtn.disabled = false;
+}
+
+function capturePhoto() {
+  if (!stream || !els.video) return;
+
+  const videoWidth = els.video.videoWidth || 640;
+  const videoHeight = els.video.videoHeight || 480;
+  const canvas = document.createElement('canvas');
+  canvas.width = videoWidth;
+  canvas.height = videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(els.video, 0, 0, videoWidth, videoHeight);
+
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    capturedBlob = blob;
+
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+
+    previewUrl = URL.createObjectURL(blob);
+    els.preview.src = previewUrl;
+    show(els.preview);
+    els.captureBtn.textContent = '🔄 Retake photo';
+  }, 'image/jpeg', 0.85);
+}
+
 function stopScanner() {
   scanning = false;
-  
+
   if (stream) {
     stream.getTracks().forEach(track => track.stop());
     stream = null;
   }
-  
+
   if (els.video.srcObject) {
     els.video.srcObject = null;
   }
-  
+
   detector = null;
   hide(els.stopBtn);
   show(els.startBtn);
   els.startBtn.disabled = false;
 }
+
 
 async function scanLoop() {
   if (!scanning || !detector) return;
@@ -205,10 +248,14 @@ async function scanLoop() {
       // Haptic feedback if available
       if (navigator.vibrate) navigator.vibrate(100);
       
-      // Stop scanning and show save UI
-      stopScanner();
+      // Stop scanning loop (keep camera stream open for photo capture)
+      scanning = false;
+      hide(els.stopBtn);
+      show(els.startBtn);
+
       els.code.textContent = currentCode;
       show(els.save);
+      resetCapture();
       els.desc.focus();
       els.desc.select();
     } else {
@@ -231,7 +278,12 @@ els.stopBtn.onclick = () => {
   els.result.textContent = 'Tap Start to scan';
 };
 
+els.captureBtn.onclick = () => {
+  capturePhoto();
+};
+
 // ==================== SAVE ITEM ====================
+
 els.saveBtn.onclick = async () => {
   if (!currentCode || !user) return;
   
@@ -242,10 +294,17 @@ els.saveBtn.onclick = async () => {
   let imgUrl = null;
   
   try {
-    // Handle image upload if file selected
-    if (els.file.files?.[0]) {
-      const file = els.file.files[0];
-      const ext = file.name.split('.').pop()?.toLowerCase();
+    // Determine which image to upload: captured photo (preferred) or file input
+    let fileToUpload = null;
+
+    if (capturedBlob) {
+      fileToUpload = new File([capturedBlob], `${Date.now()}.jpg`, { type: capturedBlob.type || 'image/jpeg' });
+    } else if (els.file.files?.[0]) {
+      fileToUpload = els.file.files[0];
+    }
+
+    if (fileToUpload) {
+      const ext = fileToUpload.name.split('.').pop()?.toLowerCase();
       const allowed = ['jpg', 'jpeg', 'png', 'webp'];
       
       if (!allowed.includes(ext)) {
@@ -254,9 +313,9 @@ els.saveBtn.onclick = async () => {
       
       const path = `${user.id}/${Date.now()}.${ext}`;
       
-      const { error: uploadError, data: uploadData } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('item-images')
-        .upload(path, file, { upsert: false });
+        .upload(path, fileToUpload, { upsert: false });
       
       if (uploadError) throw uploadError;
       
@@ -298,9 +357,11 @@ els.saveBtn.onclick = async () => {
     // Reset form
     els.desc.value = '';
     els.file.value = '';
+    resetCapture();
     hide(els.save);
     els.result.textContent = 'Tap Start to scan';
-    
+    stopScanner();
+
     // Clear success message after delay
     setTimeout(() => setMessage(els.saveMsg, ''), 1500);
     
@@ -316,8 +377,10 @@ els.cancelBtn.onclick = () => {
   hide(els.save);
   els.desc.value = '';
   els.file.value = '';
+  resetCapture();
   setMessage(els.saveMsg, '');
   els.result.textContent = 'Tap Start to scan';
+  stopScanner();
 };
 
 // ==================== HISTORY ====================
