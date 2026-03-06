@@ -30,7 +30,7 @@
     .loading::after{content:"";position:absolute;inset:0;background:rgba(255,255,255,.7);border-radius:8px}
     @media(max-width:400px){body{padding:12px}.card{padding:16px}}
   </style>
-  <script type="module" crossorigin src="/scanner_web/assets/index-BmGjc-ce.js"></script>
+  <script type="module" crossorigin src="/scanner_web/assets/index-Cf7ncMus.js"></script>
 </head>
 <body>
   <h1>📦 Scanner</h1>
@@ -47,29 +47,44 @@
 
   <!-- App Card (hidden until logged in) -->
   <div id="app" class="hidden">
-    
-    <!-- Scanner Section -->
-    <div class="card">
+
+    <!-- SCREEN 1: Barcode Entry -->
+    <div id="screen1" class="card">
+      <h2 style="text-align:center;margin-bottom:20px">📦 Scan or Enter Barcode</h2>
+
       <video id="video" playsinline autoplay muted></video>
       <div id="result">Tap Start to scan</div>
-      <button id="startBtn">▶️ Start</button>
-      <button id="stopBtn" class="secondary hidden">⏹️ Stop</button>
+
+      <button id="startBtn">▶️ Start Scanning</button>
+      <button id="stopBtn" class="secondary hidden">⏹️ Stop Scanning</button>
+
+      <div style="text-align:center;margin:16px 0;color:#666">OR</div>
+
+      <input id="barcodeInput" type="text" placeholder="Enter barcode manually" autocomplete="off" />
+      <button id="submitBarcodeBtn" style="background:#28a745">✅ Submit Barcode</button>
+
+      <p id="barcodeMsg" role="alert"></p>
     </div>
 
-    <!-- Save Scanned Item (hidden until scan) -->
-    <div id="save" class="card hidden">
-      <strong>✅ <span id="code"></span></strong>
-      <input id="desc" placeholder="Description (optional)" style="margin-top:10px" />
+    <!-- SCREEN 2: Photo & Description -->
+    <div id="screen2" class="card hidden">
+      <h2 style="text-align:center;margin-bottom:20px">📸 Capture Photo & Details</h2>
 
-      <!-- Capture photo from camera instead of choosing a file -->
-      <button id="captureBtn" style="margin-top:10px">📸 Take photo</button>
-      <img id="preview" class="hidden" alt="Photo preview" style="margin-top:10px;border-radius:8px;width:100%;height:auto;object-fit:cover;" />
+      <strong style="display:block;margin-bottom:16px">Barcode: <span id="confirmedCode"></span></strong>
+
+      <!-- Camera for photo capture -->
+      <video id="captureVideo" playsinline autoplay muted style="display:none;"></video>
+
+      <button id="captureBtn" style="margin-bottom:10px">📸 Take Photo</button>
+      <img id="preview" class="hidden" alt="Photo preview" style="margin-bottom:10px;border-radius:8px;width:100%;height:auto;object-fit:cover;" />
 
       <!-- Fallback file input (hidden) -->
       <input id="file" type="file" accept="image/*" class="hidden" />
 
-      <button id="saveBtn" style="margin-top:10px">💾 Save</button>
-      <button id="cancelBtn" class="secondary" style="margin-top:8px">Cancel</button>
+      <input id="desc" placeholder="Description (optional)" style="margin:10px 0" />
+
+      <button id="saveBtn" style="margin-top:10px;background:#28a745">💾 Save Item</button>
+      <button id="backBtn" class="secondary" style="margin-top:8px">⬅️ Back</button>
       <p id="saveMsg" role="alert"></p>
     </div>
 

@@ -13,28 +13,33 @@ const els = {
   password: $('password'),
   loginBtn: $('loginBtn'),
   msg: $('msg'),
-  
-  // Scanner
+
+  // Screen 1: Barcode Entry
+  screen1: $('screen1'),
   video: $('video'),
   result: $('result'),
   startBtn: $('startBtn'),
   stopBtn: $('stopBtn'),
-  
-  // Save Item
-  save: $('save'),
-  code: $('code'),
+  barcodeInput: $('barcodeInput'),
+  submitBarcodeBtn: $('submitBarcodeBtn'),
+  barcodeMsg: $('barcodeMsg'),
+
+  // Screen 2: Photo & Description
+  screen2: $('screen2'),
+  captureVideo: $('captureVideo'),
+  confirmedCode: $('confirmedCode'),
   desc: $('desc'),
   captureBtn: $('captureBtn'),
   preview: $('preview'),
   file: $('file'),
   saveBtn: $('saveBtn'),
-  cancelBtn: $('cancelBtn'),
+  backBtn: $('backBtn'),
   saveMsg: $('saveMsg'),
-  
+
   // History
   list: $('list'),
   refreshBtn: $('refreshBtn'),
-  
+
   // Global
   logoutBtn: $('logoutBtn')
 };
@@ -84,7 +89,31 @@ function showLogin() {
 function showApp() {
   hide(els.login);
   show(els.app);
+  showScreen1();
   loadItems();
+}
+
+// ==================== SCREEN NAVIGATION ====================
+function showScreen1() {
+  show(els.screen1);
+  hide(els.screen2);
+  resetScreen1();
+}
+
+function showScreen2() {
+  stopScanner();
+  hide(els.screen1);
+  show(els.screen2);
+  els.confirmedCode.textContent = currentCode;
+  resetCapture();
+  els.captureBtn.focus();
+}
+
+function resetScreen1() {
+  els.result.textContent = 'Tap Start to scan';
+  els.barcodeInput.value = '';
+  setMessage(els.barcodeMsg, '');
+  stopScanner();
 }
 
 // Login form submit handler (handles Enter key reliably)
@@ -139,6 +168,45 @@ els.logoutBtn.onclick = async () => {
     showLogin();
     setMessage(els.msg, '');
   }
+};
+
+// ==================== BARCODE SUBMISSION ====================
+function submitBarcode() {
+  const barcode = els.barcodeInput.value.trim();
+
+  if (!barcode) {
+    setMessage(els.barcodeMsg, '❌ Please enter or scan a barcode', 'error');
+    els.barcodeInput.focus();
+    return;
+  }
+
+  currentCode = barcode;
+  setMessage(els.barcodeMsg, '✅ Barcode submitted!', 'success');
+
+  // Move to screen 2 after short delay
+  setTimeout(() => {
+    showScreen2();
+  }, 500);
+}
+
+els.submitBarcodeBtn.onclick = submitBarcode;
+
+// Allow Enter key on barcode input
+els.barcodeInput.onkeypress = (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    submitBarcode();
+  }
+};
+
+// Back button on screen 2
+els.backBtn.onclick = () => {
+  currentCode = null;
+  els.desc.value = '';
+  els.file.value = '';
+  resetCapture();
+  setMessage(els.saveMsg, '');
+  showScreen1();
 };
 
 // ==================== SCANNER ====================
@@ -230,34 +298,29 @@ function stopScanner() {
 
 async function scanLoop() {
   if (!scanning || !detector) return;
-  
+
   // Wait for video to be ready
   if (els.video.readyState !== 4) {
     requestAnimationFrame(scanLoop);
     return;
   }
-  
+
   try {
     const barcodes = await detector.detect(els.video);
     const bc = barcodes?.[0];
-    
+
     if (bc?.rawValue) {
-      currentCode = bc.rawValue;
-      els.result.textContent = `✅ ${currentCode}`;
-      
+      els.result.textContent = `✅ ${bc.rawValue}`;
+      els.barcodeInput.value = bc.rawValue;
+      setMessage(els.barcodeMsg, 'Click Submit to confirm', 'success');
+
       // Haptic feedback if available
       if (navigator.vibrate) navigator.vibrate(100);
-      
-      // Stop scanning loop (keep camera stream open for photo capture)
+
+      // Stop scanning loop (but keep video running)
       scanning = false;
       hide(els.stopBtn);
       show(els.startBtn);
-
-      els.code.textContent = currentCode;
-      show(els.save);
-      resetCapture();
-      els.desc.focus();
-      els.desc.select();
     } else {
       requestAnimationFrame(scanLoop);
     }
@@ -286,13 +349,13 @@ els.captureBtn.onclick = () => {
 
 els.saveBtn.onclick = async () => {
   if (!currentCode || !user) return;
-  
+
   setLoading(els.saveBtn, true);
   setMessage(els.saveMsg, '⏳ Saving...', '');
-  
+
   const desc = els.desc.value.trim();
   let imgUrl = null;
-  
+
   try {
     // Determine which image to upload: captured photo (preferred) or file input
     let fileToUpload = null;
@@ -306,27 +369,27 @@ els.saveBtn.onclick = async () => {
     if (fileToUpload) {
       const ext = fileToUpload.name.split('.').pop()?.toLowerCase();
       const allowed = ['jpg', 'jpeg', 'png', 'webp'];
-      
+
       if (!allowed.includes(ext)) {
         throw new Error(`Unsupported image type: .${ext}`);
       }
-      
+
       const path = `${user.id}/${Date.now()}.${ext}`;
-      
+
       const { error: uploadError } = await supabase.storage
         .from('item-images')
         .upload(path, fileToUpload, { upsert: false });
-      
+
       if (uploadError) throw uploadError;
-      
+
       // Get public URL (synchronous call)
       const { data: { publicUrl } } = supabase.storage
         .from('item-images')
         .getPublicUrl(path);
-      
+
       imgUrl = publicUrl;
     }
-    
+
     // Insert into database
     const { error: dbError } = await supabase
       .from('items')
@@ -339,9 +402,9 @@ els.saveBtn.onclick = async () => {
       }])
       .select()
       .single();
-    
+
     if (dbError) throw dbError;
-    
+
     // Optimistic UI update
     items.unshift({
       id: dbError?.id || Date.now(),
@@ -351,36 +414,25 @@ els.saveBtn.onclick = async () => {
       created_at: new Date().toISOString()
     });
     renderItems();
-    
+
     setMessage(els.saveMsg, '✅ Saved!', 'success');
-    
-    // Reset form
+
+    // Reset and go back to screen 1
     els.desc.value = '';
     els.file.value = '';
     resetCapture();
-    hide(els.save);
-    els.result.textContent = 'Tap Start to scan';
-    stopScanner();
+    currentCode = null;
 
-    // Clear success message after delay
-    setTimeout(() => setMessage(els.saveMsg, ''), 1500);
-    
+    setTimeout(() => {
+      showScreen1();
+    }, 1500);
+
   } catch (err) {
     console.error('💾 Save error:', err);
     setMessage(els.saveMsg, `❌ ${err.message || 'Save failed'}`, 'error');
   } finally {
     setLoading(els.saveBtn, false);
   }
-};
-
-els.cancelBtn.onclick = () => {
-  hide(els.save);
-  els.desc.value = '';
-  els.file.value = '';
-  resetCapture();
-  setMessage(els.saveMsg, '');
-  els.result.textContent = 'Tap Start to scan';
-  stopScanner();
 };
 
 // ==================== HISTORY ====================
