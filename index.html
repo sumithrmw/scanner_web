@@ -10,53 +10,62 @@
     h1{text-align:center;margin-bottom:16px;color:#333}
     .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:16px}
     input,button{width:100%;padding:14px;margin:8px 0;border:1px solid #ddd;border-radius:8px;font-size:16px;-webkit-tap-highlight-color:transparent}
-    button{background:#007bff;color:#fff;border:none;font-weight:600;cursor:pointer;transition:transform .1s}
+    button{background:#007bff;color:#fff;border:none;font-weight:600;cursor:pointer;transition:transform .1s,opacity .2s}
     button:active{transform:scale(.98)}
+    button:disabled{opacity:.6;cursor:not-allowed}
     button.secondary{background:#6c757d}
     button.danger{background:#dc3545}
-    video{width:100%;border-radius:8px;background:#000;max-height:400px}
-    #result{font-weight:600;text-align:center;padding:12px;background:#e9ecef;border-radius:8px;margin:10px 0}
+    video{width:100%;border-radius:8px;background:#000;max-height:400px;object-fit:cover}
+    #result{font-weight:600;text-align:center;padding:12px;background:#e9ecef;border-radius:8px;margin:10px 0;min-height:48px;display:flex;align-items:center;justify-content:center}
     .item{border:1px solid #eee;padding:12px;margin:8px 0;border-radius:6px;background:#fafafa;display:flex;gap:12px;align-items:flex-start}
-    .item img{width:80px;height:80px;object-fit:cover;border-radius:4px;flex-shrink:0}
+    .item img{width:80px;height:80px;object-fit:cover;border-radius:4px;flex-shrink:0;background:#eee}
     .item-info{flex:1;min-width:0}
-    .item-info strong{word-break:break-all}
+    .item-info strong{word-break:break-all;display:block;margin-bottom:4px}
     .item-info small{color:#666}
     .hidden{display:none!important}
-    #msg{font-size:14px;margin-top:8px;text-align:center}
+    #msg{font-size:14px;margin-top:8px;text-align:center;min-height:20px}
     .error{color:#dc3545}
     .success{color:#28a745}
-    .loading{opacity:.6;pointer-events:none}
+    .loading{opacity:.6;pointer-events:none;position:relative}
+    .loading::after{content:"";position:absolute;inset:0;background:rgba(255,255,255,.7);border-radius:8px}
     @media(max-width:400px){body{padding:12px}.card{padding:16px}}
   </style>
 </head>
 <body>
   <h1>📦 Scanner</h1>
 
-  <!-- Login -->
+  <!-- Login Card -->
   <div id="login" class="card">
-    <input id="email" type="email" placeholder="Email" autocomplete="email" />
-    <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
-    <button id="loginBtn">🔓 Login</button>
-    <p id="msg"></p>
+    <form id="loginForm" autocomplete="on">
+      <input id="email" type="email" placeholder="Email" autocomplete="email" required />
+      <input id="password" type="password" placeholder="Password" autocomplete="current-password" required />
+      <button type="submit" id="loginBtn">🔓 Login</button>
+    </form>
+    <p id="msg" role="alert"></p>
   </div>
 
-  <!-- App -->
+  <!-- App Card (hidden until logged in) -->
   <div id="app" class="hidden">
+    
+    <!-- Scanner Section -->
     <div class="card">
       <video id="video" playsinline autoplay muted></video>
       <div id="result">Tap Start to scan</div>
       <button id="startBtn">▶️ Start</button>
+      <button id="stopBtn" class="secondary hidden">⏹️ Stop</button>
     </div>
 
+    <!-- Save Scanned Item (hidden until scan) -->
     <div id="save" class="card hidden">
       <strong>✅ <span id="code"></span></strong>
       <input id="desc" placeholder="Description (optional)" style="margin-top:10px" />
       <input id="file" type="file" accept="image/*" style="margin-top:8px" />
       <button id="saveBtn" style="margin-top:10px">💾 Save</button>
       <button id="cancelBtn" class="secondary" style="margin-top:8px">Cancel</button>
-      <p id="saveMsg"></p>
+      <p id="saveMsg" role="alert"></p>
     </div>
 
+    <!-- History Section -->
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <strong>📋 History</strong>

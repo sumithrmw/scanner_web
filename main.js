@@ -1,248 +1,409 @@
-// main.js - Ultra fast, Supabase backend, CORRECT destructuring
+// main.js - Production-ready Scanner App with Supabase
 import { BarcodeDetector } from "barcode-detector/pure";
 import { supabase } from "./supabase.js";
 
 // ==================== CACHED DOM ====================
-const $ = id => document.getElementById(id);
+const $ = (id) => document.getElementById(id);
 const els = {
-  login: $('login'), app: $('app'), email: $('email'), password: $('password'),
-  loginBtn: $('loginBtn'), msg: $('msg'), video: $('video'), result: $('result'),
-  startBtn: $('startBtn'), save: $('save'), code: $('code'), desc: $('desc'),
-  file: $('file'), saveBtn: $('saveBtn'), cancelBtn: $('cancelBtn'),
-  saveMsg: $('saveMsg'), list: $('list'), refreshBtn: $('refreshBtn'),
+  // Auth
+  login: $('login'),
+  app: $('app'),
+  loginForm: $('loginForm'),
+  email: $('email'),
+  password: $('password'),
+  loginBtn: $('loginBtn'),
+  msg: $('msg'),
+  
+  // Scanner
+  video: $('video'),
+  result: $('result'),
+  startBtn: $('startBtn'),
+  stopBtn: $('stopBtn'),
+  
+  // Save Item
+  save: $('save'),
+  code: $('code'),
+  desc: $('desc'),
+  file: $('file'),
+  saveBtn: $('saveBtn'),
+  cancelBtn: $('cancelBtn'),
+  saveMsg: $('saveMsg'),
+  
+  // History
+  list: $('list'),
+  refreshBtn: $('refreshBtn'),
+  
+  // Global
   logoutBtn: $('logoutBtn')
 };
 
 // ==================== STATE ====================
-let scanning = false, detector, currentCode, user = null, items = [];
+let scanning = false;
+let detector = null;
+let currentCode = null;
+let stream = null;
+let user = null;
+let items = [];
+
+// ==================== UTILS ====================
+const show = (el) => el.classList.remove('hidden');
+const hide = (el) => el.classList.add('hidden');
+const setLoading = (btn, loading) => {
+  btn.disabled = loading;
+  btn.classList.toggle('loading', loading);
+};
+const setMessage = (el, text, type = '') => {
+  el.textContent = text || '';
+  el.className = type;
+};
 
 // ==================== AUTH ====================
 async function checkAuth() {
-  // ✅ CORRECT: data: { session }
-  const { data: { session } } = await supabase.auth.getSession();
-  user = session?.user || null;
-  return user;
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    user = session?.user ?? null;
+    return user;
+  } catch (err) {
+    console.error('🔐 Auth check failed:', err);
+    user = null;
+    return null;
+  }
 }
 
 function showLogin() {
-  els.login.classList.remove('hidden');
-  els.app.classList.add('hidden');
+  hide(els.app);
+  show(els.login);
+  els.email.focus();
 }
 
 function showApp() {
-  els.login.classList.add('hidden');
-  els.app.classList.remove('hidden');
+  hide(els.login);
+  show(els.app);
   loadItems();
 }
 
-els.loginBtn.onclick = async () =>  {
-  // 🔍 DEBUG: Log what we're sending
+// Login form submit handler (handles Enter key reliably)
+els.loginForm.onsubmit = async (e) => {
+  e.preventDefault();
+  
   const email = els.email.value.trim();
   const password = els.password.value;
+  
   console.log('🔐 Login attempt:', { email, passwordLength: password.length });
   
-  if (!email || !password) { 
-    console.error('❌ Missing credentials');
-    els.msg.textContent = '❌ Enter email & password'; 
-    els.msg.className = 'error'; 
-    return; 
+  if (!email || !password) {
+    setMessage(els.msg, '❌ Enter email & password', 'error');
+    return;
   }
   
-  els.loginBtn.classList.add('loading');
-  els.msg.textContent = '⏳';
+  setLoading(els.loginBtn, true);
+  setMessage(els.msg, '⏳ Signing in...', '');
   
-  // ✅ CORRECT: error at top level
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  
-  els.loginBtn.classList.remove('loading');
-  if (error) { 
-    els.msg.textContent = '❌ ' + error.message; 
-    els.msg.className = 'error'; 
-    return; 
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    
+    if (error) throw error;
+    
+    setMessage(els.msg, '✅ Welcome!', 'success');
+    await checkAuth();
+    showApp();
+    
+    // Clear form
+    els.email.value = '';
+    els.password.value = '';
+    
+  } catch (err) {
+    console.error('❌ Login error:', err);
+    setMessage(els.msg, `❌ ${err.message || 'Login failed'}`, 'error');
+  } finally {
+    setLoading(els.loginBtn, false);
   }
-  
-  els.msg.textContent = '✅';
-  els.msg.className = 'success';
-  await checkAuth();
-  showApp();
 };
 
+// Logout
 els.logoutBtn.onclick = async () => {
-  await supabase.auth.signOut();
-  user = null;
-  items = [];
-  els.list.innerHTML = '';
-  showLogin();
-  els.email.value = '';
-  els.password.value = '';
-  els.msg.textContent = '';
+  try {
+    await supabase.auth.signOut();
+  } catch (err) {
+    console.error('🚪 Logout error:', err);
+  } finally {
+    user = null;
+    items = [];
+    els.list.innerHTML = '';
+    stopScanner();
+    showLogin();
+    setMessage(els.msg, '');
+  }
 };
-
-els.email.onkeypress = e => e.key === 'Enter' && els.loginBtn.click();
-els.password.onkeypress = e => e.key === 'Enter' && els.loginBtn.click();
 
 // ==================== SCANNER ====================
-els.startBtn.onclick = async () => {
+async function startScanner() {
   if (scanning) return;
-  scanning = true;
-  els.startBtn.disabled = true;
-  els.result.textContent = '📷 Starting...';
-
+  
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ 
+    stream = await navigator.mediaDevices.getUserMedia({ 
       video: { facingMode: 'environment' } 
     });
+    
     els.video.srcObject = stream;
     await els.video.play();
-
+    
     detector = new BarcodeDetector({ 
       formats: ['qr_code', 'code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e'] 
     });
+    
+    scanning = true;
+    hide(els.startBtn);
+    show(els.stopBtn);
     els.result.textContent = '🔍 Scanning...';
+    
     scanLoop();
-  } catch (e) {
-    els.result.textContent = '❌ ' + e.message;
+    
+  } catch (err) {
+    console.error('📷 Camera error:', err);
+    els.result.textContent = `❌ ${err.message || 'Camera access denied'}`;
     scanning = false;
-    els.startBtn.disabled = false;
-  }
-};
-
-async function scanLoop() {
-  if (!scanning || !detector || els.video.readyState !== 4) {
-    if (scanning) requestAnimationFrame(scanLoop);
-    return;
-  }
-  try {
-    const [bc] = await detector.detect(els.video);
-    if (bc?.rawValue) {
-      currentCode = bc.rawValue;
-      els.result.textContent = '✅ ' + currentCode;
-      if (navigator.vibrate) navigator.vibrate(100);
-      scanning = false;
-      els.startBtn.disabled = false;
-      els.startBtn.textContent = '🔄 Again';
-      els.code.textContent = currentCode;
-      els.save.classList.remove('hidden');
-      els.desc.focus();
-    } else {
-      requestAnimationFrame(scanLoop);
-    }
-  } catch { 
-    requestAnimationFrame(scanLoop); 
   }
 }
 
+function stopScanner() {
+  scanning = false;
+  
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+  
+  if (els.video.srcObject) {
+    els.video.srcObject = null;
+  }
+  
+  detector = null;
+  hide(els.stopBtn);
+  show(els.startBtn);
+  els.startBtn.disabled = false;
+}
+
+async function scanLoop() {
+  if (!scanning || !detector) return;
+  
+  // Wait for video to be ready
+  if (els.video.readyState !== 4) {
+    requestAnimationFrame(scanLoop);
+    return;
+  }
+  
+  try {
+    const barcodes = await detector.detect(els.video);
+    const bc = barcodes?.[0];
+    
+    if (bc?.rawValue) {
+      currentCode = bc.rawValue;
+      els.result.textContent = `✅ ${currentCode}`;
+      
+      // Haptic feedback if available
+      if (navigator.vibrate) navigator.vibrate(100);
+      
+      // Stop scanning and show save UI
+      stopScanner();
+      els.code.textContent = currentCode;
+      show(els.save);
+      els.desc.focus();
+      els.desc.select();
+    } else {
+      requestAnimationFrame(scanLoop);
+    }
+  } catch (err) {
+    console.warn('🔍 Scan error:', err);
+    if (scanning) requestAnimationFrame(scanLoop);
+  }
+}
+
+// Button handlers
+els.startBtn.onclick = () => {
+  els.result.textContent = '';
+  startScanner();
+};
+
+els.stopBtn.onclick = () => {
+  stopScanner();
+  els.result.textContent = 'Tap Start to scan';
+};
+
 // ==================== SAVE ITEM ====================
 els.saveBtn.onclick = async () => {
-  els.saveBtn.disabled = true;
-  els.saveMsg.textContent = '⏳';
-
+  if (!currentCode || !user) return;
+  
+  setLoading(els.saveBtn, true);
+  setMessage(els.saveMsg, '⏳ Saving...', '');
+  
   const desc = els.desc.value.trim();
   let imgUrl = null;
-
-  if (els.file.files[0]) {
-    const f = els.file.files[0];
-    const ext = f.name.split('.').pop();
-    const path = `${user.id}/${Date.now()}.${ext}`;
-    
-    // ✅ CORRECT: error and data at top level
-    const { error: uploadError,  uploadData } = await supabase.storage
-      .from('item-images')
-      .upload(path, f);
-    
-    if (!uploadError) {
-      // ✅ CORRECT: data: { publicUrl } - SYNCHRONOUS, no await!
+  
+  try {
+    // Handle image upload if file selected
+    if (els.file.files?.[0]) {
+      const file = els.file.files[0];
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      const allowed = ['jpg', 'jpeg', 'png', 'webp'];
+      
+      if (!allowed.includes(ext)) {
+        throw new Error(`Unsupported image type: .${ext}`);
+      }
+      
+      const path = `${user.id}/${Date.now()}.${ext}`;
+      
+      const { error: uploadError, data: uploadData } = await supabase.storage
+        .from('item-images')
+        .upload(path, file, { upsert: false });
+      
+      if (uploadError) throw uploadError;
+      
+      // Get public URL (synchronous call)
       const { data: { publicUrl } } = supabase.storage
         .from('item-images')
         .getPublicUrl(path);
+      
       imgUrl = publicUrl;
     }
-  }
-
-  // ✅ CORRECT: error at top level
-  const { error: dbError } = await supabase
-    .from('items')
-    .insert([{
-      user_id: user.id,
+    
+    // Insert into database
+    const { error: dbError } = await supabase
+      .from('items')
+      .insert([{
+        user_id: user.id,
+        barcode: currentCode,
+        description: desc || null,
+        image_url: imgUrl,
+        created_at: new Date().toISOString()
+      }])
+      .select()
+      .single();
+    
+    if (dbError) throw dbError;
+    
+    // Optimistic UI update
+    items.unshift({
+      id: dbError?.id || Date.now(),
       barcode: currentCode,
-      description: desc || null,
-      image_url: imgUrl
-    }]);
-
-  els.saveBtn.disabled = false;
-  if (dbError) { 
-    els.saveMsg.textContent = '❌ ' + dbError.message; 
-    els.saveMsg.className = 'error'; 
-    return; 
+      description: desc,
+      image_url: imgUrl,
+      created_at: new Date().toISOString()
+    });
+    renderItems();
+    
+    setMessage(els.saveMsg, '✅ Saved!', 'success');
+    
+    // Reset form
+    els.desc.value = '';
+    els.file.value = '';
+    hide(els.save);
+    els.result.textContent = 'Tap Start to scan';
+    
+    // Clear success message after delay
+    setTimeout(() => setMessage(els.saveMsg, ''), 1500);
+    
+  } catch (err) {
+    console.error('💾 Save error:', err);
+    setMessage(els.saveMsg, `❌ ${err.message || 'Save failed'}`, 'error');
+  } finally {
+    setLoading(els.saveBtn, false);
   }
-
-  // Optimistic update
-  items.unshift({ 
-    barcode: currentCode, 
-    description: desc, 
-    image_url: imgUrl, 
-    created_at: new Date().toISOString() 
-  });
-  renderItems();
-
-  els.saveMsg.textContent = '✅ Saved';
-  els.saveMsg.className = 'success';
-  els.desc.value = '';
-  els.file.value = '';
-  els.save.classList.add('hidden');
-  els.result.textContent = 'Tap Start to scan';
-  setTimeout(() => { els.saveMsg.textContent = ''; }, 1500);
 };
 
 els.cancelBtn.onclick = () => {
-  els.save.classList.add('hidden');
+  hide(els.save);
   els.desc.value = '';
   els.file.value = '';
-  els.saveMsg.textContent = '';
+  setMessage(els.saveMsg, '');
   els.result.textContent = 'Tap Start to scan';
 };
 
 // ==================== HISTORY ====================
 async function loadItems() {
+  if (!user) return;
+  
   els.list.innerHTML = '<em style="color:#666">Loading...</em>';
   
-  // ✅ CORRECT: { data, error }
-  const { data, error } = await supabase
-    .from('items')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(50);
+  try {
+    const { data, error } = await supabase
+      .from('items')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
     
-  if (error) {
-    els.list.innerHTML = `<em class="error">Error: ${error.message}</em>`;
-    return;
+    if (error) throw error;
+    
+    items = data || [];
+    renderItems();
+    
+  } catch (err) {
+    console.error('📋 Load error:', err);
+    els.list.innerHTML = `<em class="error">Error: ${err.message}</em>`;
   }
-  
-  items = data || [];
-  renderItems();
 }
 
 function renderItems() {
-  if (!items.length) { 
-    els.list.innerHTML = '<em style="color:#666">Nothing scanned yet</em>'; 
-    return; 
+  if (!items.length) {
+    els.list.innerHTML = '<em style="color:#666">Nothing scanned yet</em>';
+    return;
   }
-  els.list.innerHTML = items.map(i => `
+  
+  els.list.innerHTML = items.map(item => `
     <div class="item">
-      ${i.image_url ? `<img src="${i.image_url}" loading="lazy" alt="">` : ''}
+      ${item.image_url 
+        ? `<img src="${item.image_url}" loading="lazy" alt="Item" onerror="this.style.display='none'">` 
+        : ''}
       <div class="item-info">
-        <strong>${i.barcode}</strong><br>
-        ${i.description || ''}<br>
-        <small>${new Date(i.created_at).toLocaleDateString()}</small>
+        <strong>${escapeHtml(item.barcode)}</strong>
+        ${item.description ? `<span>${escapeHtml(item.description)}</span>` : ''}
+        <small>${formatDate(item.created_at)}</small>
       </div>
     </div>
   `).join('');
 }
 
-els.refreshBtn.onclick = loadItems;
+// Helper: Prevent XSS
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Helper: Format date
+function formatDate(isoString) {
+  try {
+    return new Date(isoString).toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  } catch {
+    return '';
+  }
+}
+
+els.refreshBtn.onclick = () => {
+  els.refreshBtn.disabled = true;
+  loadItems().finally(() => {
+    setTimeout(() => els.refreshBtn.disabled = false, 500);
+  });
+};
 
 // ==================== INIT ====================
-(async () => {
+(async function init() {
+  // Check auth on load
   await checkAuth();
-  user ? showApp() : showLogin();
-})();
+  
+  if (user) {
+    showApp();
+  } else {
+    showLogin();
+  }
+  
+  // Auth state change listener (handles token refresh, logout from other tabs, etc.)
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    console.log('🔄
