@@ -100,12 +100,24 @@ function showScreen1() {
   resetScreen1();
 }
 
-function showScreen2() {
+async function showScreen2() {
   stopScanner();
   hide(els.screen1);
   show(els.screen2);
   els.confirmedCode.textContent = currentCode;
   resetCapture();
+
+  // Start camera for photo capture
+  try {
+    const captureStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }
+    });
+    els.captureVideo.srcObject = captureStream;
+    show(els.captureVideo);
+  } catch (err) {
+    console.warn('📷 Camera access for photo capture failed:', err);
+  }
+
   els.captureBtn.focus();
 }
 
@@ -184,8 +196,8 @@ function submitBarcode() {
   setMessage(els.barcodeMsg, '✅ Barcode submitted!', 'success');
 
   // Move to screen 2 after short delay
-  setTimeout(() => {
-    showScreen2();
+  setTimeout(async () => {
+    await showScreen2();
   }, 500);
 }
 
@@ -240,6 +252,13 @@ async function startScanner() {
 }
 
 function resetCapture() {
+  // Stop camera stream for photo capture
+  if (els.captureVideo.srcObject) {
+    els.captureVideo.srcObject.getTracks().forEach(track => track.stop());
+    els.captureVideo.srcObject = null;
+  }
+  hide(els.captureVideo);
+
   capturedBlob = null;
   if (previewUrl) {
     URL.revokeObjectURL(previewUrl);
@@ -252,15 +271,15 @@ function resetCapture() {
 }
 
 function capturePhoto() {
-  if (!stream || !els.video) return;
+  if (!els.captureVideo.srcObject) return;
 
-  const videoWidth = els.video.videoWidth || 640;
-  const videoHeight = els.video.videoHeight || 480;
+  const videoWidth = els.captureVideo.videoWidth || 640;
+  const videoHeight = els.captureVideo.videoHeight || 480;
   const canvas = document.createElement('canvas');
   canvas.width = videoWidth;
   canvas.height = videoHeight;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(els.video, 0, 0, videoWidth, videoHeight);
+  ctx.drawImage(els.captureVideo, 0, 0, videoWidth, videoHeight);
 
   canvas.toBlob((blob) => {
     if (!blob) return;
