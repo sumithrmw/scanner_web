@@ -406,4 +406,18 @@ els.refreshBtn.onclick = () => {
   
   // Auth state change listener (handles token refresh, logout from other tabs, etc.)
   supabase.auth.onAuthStateChange(async (event, session) => {
-    console.log('🔄
+    console.log('🔄 Auth state:', event);
+    
+    if (event === 'SIGNED_IN' && session?.user) {
+      user = session.user;
+      showApp();
+    }
+    
+    if (event === 'SIGNED_OUT') {
+      user = null;
+      items = [];
+      stopScanner();
+      showLogin();
+    }
+  });
+})();
